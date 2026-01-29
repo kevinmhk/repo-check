@@ -203,41 +203,41 @@ def _render_lines(
     for idx, name in enumerate(names):
         result = results[idx]
         if result is None:
-            status_raw = LABEL_PENDING
-            status_colored = _color(status_raw, ANSI_DIM, use_color)
+            branch_raw = LABEL_PENDING
+            branch_colored = _color(branch_raw, ANSI_DIM, use_color)
             if show_remote:
                 line = (
                     f"{format_cell(name, name, max_name)}  "
-                    f"{format_cell('', '', max_branch)}  "
-                    f"{format_cell(status_raw, status_colored, max_clean)}  "
+                    f"{format_cell(branch_raw, branch_colored, max_branch)}  "
+                    f"{format_cell('', '', max_clean)}  "
                     f"{format_cell('', '', max_remote)}  "
                     f"{format_cell('', '', max_sync)}"
                 )
             else:
                 line = (
                     f"{format_cell(name, name, max_name)}  "
-                    f"{format_cell('', '', max_branch)}  "
-                    f"{format_cell(status_raw, status_colored, max_clean)}"
+                    f"{format_cell(branch_raw, branch_colored, max_branch)}  "
+                    f"{format_cell('', '', max_clean)}"
                 )
             lines.append(line)
             continue
 
         if not result.is_repo:
-            status_raw = LABEL_NOT_INIT
-            status_colored = _color(status_raw, ANSI_YELLOW, use_color)
+            branch_raw = LABEL_NOT_INIT
+            branch_colored = _color(branch_raw, ANSI_YELLOW, use_color)
             if show_remote:
                 line = (
                     f"{format_cell(name, name, max_name)}  "
-                    f"{format_cell('', '', max_branch)}  "
-                    f"{format_cell(status_raw, status_colored, max_clean)}  "
+                    f"{format_cell(branch_raw, branch_colored, max_branch)}  "
+                    f"{format_cell('', '', max_clean)}  "
                     f"{format_cell('', '', max_remote)}  "
                     f"{format_cell('', '', max_sync)}"
                 )
             else:
                 line = (
                     f"{format_cell(name, name, max_name)}  "
-                    f"{format_cell('', '', max_branch)}  "
-                    f"{format_cell(status_raw, status_colored, max_clean)}"
+                    f"{format_cell(branch_raw, branch_colored, max_branch)}  "
+                    f"{format_cell('', '', max_clean)}"
                 )
             lines.append(line)
             continue
@@ -376,11 +376,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Exclude hidden subfolders starting with a dot.",
     )
     parser.add_argument(
-        "--no-color",
-        action="store_true",
-        help="Disable ANSI colors and dynamic rendering.",
-    )
-    parser.add_argument(
         "--max-workers",
         type=int,
         default=os.cpu_count() or 4,
@@ -391,11 +386,6 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=1,
         help="Subfolder depth to scan (default: 1).",
-    )
-    parser.add_argument(
-        "--hide-remote",
-        action="store_true",
-        help="Hide remote origin detection in the output.",
     )
     return parser
 
@@ -417,8 +407,8 @@ def main() -> None:
         print("No subfolders found.")
         return
 
-    use_color = sys.stdout.isatty() and not args.no_color
-    allow_dynamic = use_color and sys.stdout.isatty() and not args.no_color
+    use_color = sys.stdout.isatty()
+    allow_dynamic = use_color
 
     try:
         asyncio.run(
@@ -427,7 +417,7 @@ def main() -> None:
                 use_color,
                 allow_dynamic,
                 args.max_workers,
-                show_remote=not args.hide_remote,
+                show_remote=True,
             )
         )
     except KeyboardInterrupt:
