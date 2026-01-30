@@ -64,6 +64,10 @@ def _run_git(path: str, args: List[str]) -> Tuple[int, str, str]:
 
 
 def _config_file_path() -> str:
+    return os.path.expanduser("~/.config/repo-check/config")
+
+
+def _legacy_config_file_path() -> str:
     return os.path.expanduser("~/.config/my_repos_check/config")
 
 
@@ -130,8 +134,13 @@ def _coerce_config(values: dict, defaults: dict) -> dict:
 def _ensure_config() -> dict:
     defaults = _default_config()
     config_path = _config_file_path()
+    legacy_path = _legacy_config_file_path()
     if not os.path.exists(config_path):
-        _write_config(config_path, defaults)
+        if os.path.exists(legacy_path):
+            legacy = _load_config(legacy_path)
+            _write_config(config_path, _coerce_config(legacy, defaults))
+        else:
+            _write_config(config_path, defaults)
     raw = _load_config(config_path)
     return _coerce_config(raw, defaults)
 

@@ -13,6 +13,8 @@ A small CLI that scans subfolders of a target directory (depth configurable), de
 Use uv to install the CLI as a user-level tool:
 
 ```bash
+git clone https://github.com/kevinmhk/repo-check.git
+cd repo-check
 uv tool install .
 ```
 
@@ -34,7 +36,7 @@ repo-check --path ~/workspaces
 
 ## Configuration
 
-On startup, the CLI ensures a config file exists at `~/.config/my_repos_check/config`. The file uses simple `key=value` pairs for flag defaults, for example:
+On startup, the CLI ensures a config file exists at `~/.config/repo-check/config`. The file uses simple `key=value` pairs for flag defaults, for example:
 
 ```
 path=/Users/you/workspaces
