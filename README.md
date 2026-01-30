@@ -17,10 +17,23 @@ repo-check --path ~/workspaces
 
 ### Common flags
 
-- `--path` (default: current working directory)
-- `--exclude-hidden` (exclude hidden subfolders starting with `.`)
-- `--max-workers` (parallelism for Git checks, default: CPU count)
-- `--depth` (subfolder depth to scan, default: 1)
+- `--path` (default: config value or current working directory on first run)
+- `--exclude-hidden` / `--no-exclude-hidden` (toggle hidden subfolders)
+- `--max-workers` (parallelism for Git checks, default: config value)
+- `--depth` (subfolder depth to scan, default: config value)
+
+## Configuration
+
+On startup, the CLI ensures a config file exists at `~/.config/my_repos_check/config`. The file uses simple `key=value` pairs for flag defaults, for example:
+
+```
+path=/Users/you/workspaces
+exclude_hidden=false
+max_workers=8
+depth=2
+```
+
+CLI flags always override config values for that run.
 
 ## Output legend
 

@@ -63,6 +63,79 @@ def _run_git(path: str, args: List[str]) -> Tuple[int, str, str]:
     return completed.returncode, completed.stdout.strip(), completed.stderr.strip()
 
 
+def _config_file_path() -> str:
+    return os.path.expanduser("~/.config/my_repos_check/config")
+
+
+def _default_config() -> dict:
+    return {
+        "path": os.getcwd(),
+        "exclude_hidden": "false",
+        "max_workers": str(os.cpu_count() or 4),
+        "depth": "1",
+    }
+
+
+def _parse_bool(value: str) -> Optional[bool]:
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return None
+
+
+def _load_config(path: str) -> dict:
+    values: dict = {}
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            for line in handle:
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+                if "=" not in stripped:
+                    continue
+                key, value = stripped.split("=", 1)
+                values[key.strip()] = value.strip()
+    except FileNotFoundError:
+        return {}
+    return values
+
+
+def _write_config(path: str, values: dict) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        for key, value in values.items():
+            handle.write(f"{key}={value}\n")
+
+
+def _coerce_config(values: dict, defaults: dict) -> dict:
+    config = defaults.copy()
+    for key, value in values.items():
+        if key == "path" and value:
+            config["path"] = value
+        elif key == "exclude_hidden":
+            parsed = _parse_bool(value)
+            if parsed is not None:
+                config["exclude_hidden"] = "true" if parsed else "false"
+        elif key == "max_workers":
+            if value.isdigit() and int(value) > 0:
+                config["max_workers"] = value
+        elif key == "depth":
+            if value.isdigit() and int(value) > 0:
+                config["depth"] = value
+    return config
+
+
+def _ensure_config() -> dict:
+    defaults = _default_config()
+    config_path = _config_file_path()
+    if not os.path.exists(config_path):
+        _write_config(config_path, defaults)
+    raw = _load_config(config_path)
+    return _coerce_config(raw, defaults)
+
+
 def _check_repo(path: str, name: str) -> RepoResult:
     code, _, _ = _run_git(path, ["rev-parse", "--is-inside-work-tree"])
     if code != 0:
@@ -359,7 +432,7 @@ async def _run_checks(
         _print_block(_render_lines(names, results, use_color, show_remote))
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser(defaults: dict) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Check immediate subfolders for Git status (branch + clean/dirty)."
@@ -367,31 +440,33 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--path",
-        default=os.getcwd(),
-        help="Target directory to scan (default: current working directory).",
+        default=defaults["path"],
+        help="Target directory to scan (default: configured path).",
     )
     parser.add_argument(
         "--exclude-hidden",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=defaults["exclude_hidden"] == "true",
         help="Exclude hidden subfolders starting with a dot.",
     )
     parser.add_argument(
         "--max-workers",
         type=int,
-        default=os.cpu_count() or 4,
-        help="Maximum parallel Git checks (default: CPU count).",
+        default=int(defaults["max_workers"]),
+        help="Maximum parallel Git checks (default: configured value).",
     )
     parser.add_argument(
         "--depth",
         type=int,
-        default=1,
-        help="Subfolder depth to scan (default: 1).",
+        default=int(defaults["depth"]),
+        help="Subfolder depth to scan (default: configured value).",
     )
     return parser
 
 
 def main() -> None:
-    parser = build_parser()
+    defaults = _ensure_config()
+    parser = build_parser(defaults)
     args = parser.parse_args()
 
     git_code, _, _ = _run_git(os.getcwd(), ["--version"])
