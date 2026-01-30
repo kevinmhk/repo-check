@@ -77,10 +77,9 @@ def _ignore_file_path() -> str:
 
 def _default_config() -> dict:
     return {
-        "path": os.getcwd(),
+        "paths": [os.getcwd()],
         "exclude_hidden": "false",
         "max_workers": str(os.cpu_count() or 4),
-        "depth": "1",
     }
 
 
@@ -93,8 +92,8 @@ def _parse_bool(value: str) -> Optional[bool]:
     return None
 
 
-def _load_config(path: str) -> dict:
-    values: dict = {}
+def _load_config(path: str) -> List[Tuple[str, str]]:
+    values: List[Tuple[str, str]] = []
     try:
         with open(path, "r", encoding="utf-8") as handle:
             for line in handle:
@@ -104,24 +103,27 @@ def _load_config(path: str) -> dict:
                 if "=" not in stripped:
                     continue
                 key, value = stripped.split("=", 1)
-                values[key.strip()] = value.strip()
+                values.append((key.strip(), value.strip()))
     except FileNotFoundError:
-        return {}
+        return []
     return values
 
 
 def _write_config(path: str, values: dict) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
-        for key, value in values.items():
-            handle.write(f"{key}={value}\n")
+        for entry in values.get("paths", []):
+            handle.write(f"path={entry}\n")
+        handle.write(f"exclude_hidden={values['exclude_hidden']}\n")
+        handle.write(f"max_workers={values['max_workers']}\n")
 
 
-def _coerce_config(values: dict, defaults: dict) -> dict:
+def _coerce_config(values: List[Tuple[str, str]], defaults: dict) -> dict:
     config = defaults.copy()
-    for key, value in values.items():
+    config["paths"] = []
+    for key, value in values:
         if key == "path" and value:
-            config["path"] = value
+            config["paths"].append(value)
         elif key == "exclude_hidden":
             parsed = _parse_bool(value)
             if parsed is not None:
@@ -129,14 +131,13 @@ def _coerce_config(values: dict, defaults: dict) -> dict:
         elif key == "max_workers":
             if value.isdigit() and int(value) > 0:
                 config["max_workers"] = value
-        elif key == "depth":
-            if value.isdigit() and int(value) > 0:
-                config["depth"] = value
+    if not config["paths"]:
+        config["paths"] = defaults["paths"]
     return config
 
 
-def _load_ignore_paths(base_path: str) -> List[str]:
-    """Load ignore entries and return absolute paths to skip during scanning."""
+def _load_ignore_entries() -> List[str]:
+    """Load ignore entries from the ignore file."""
     ignore_path = _ignore_file_path()
     ignored: List[str] = []
     try:
@@ -145,14 +146,21 @@ def _load_ignore_paths(base_path: str) -> List[str]:
                 stripped = line.strip()
                 if not stripped or stripped.startswith("#"):
                     continue
-                expanded = os.path.expanduser(stripped)
-                if os.path.isabs(expanded):
-                    abs_path = os.path.abspath(os.path.normpath(expanded))
-                else:
-                    abs_path = os.path.abspath(os.path.normpath(os.path.join(base_path, expanded)))
-                ignored.append(abs_path)
+                ignored.append(stripped)
     except FileNotFoundError:
         return []
+    return ignored
+
+
+def _resolve_ignore_paths(base_path: str, entries: List[str]) -> List[str]:
+    ignored: List[str] = []
+    for entry in entries:
+        expanded = os.path.expanduser(entry)
+        if os.path.isabs(expanded):
+            abs_path = os.path.abspath(os.path.normpath(expanded))
+        else:
+            abs_path = os.path.abspath(os.path.normpath(os.path.join(base_path, expanded)))
+        ignored.append(abs_path)
     return ignored
 
 
@@ -271,30 +279,74 @@ def _check_repo(path: str, name: str) -> RepoResult:
 def _list_subfolders(
     base_path: str,
     include_hidden: bool,
-    max_depth: int,
     ignored_paths: List[str],
 ) -> List[Tuple[str, str]]:
     entries: List[Tuple[str, str]] = []
 
-    def walk(current_path: str, current_depth: int) -> None:
-        if current_depth > max_depth:
-            return
-        with os.scandir(current_path) as it:
-            for entry in it:
-                if not entry.is_dir(follow_symlinks=False):
-                    continue
-                if _is_ignored(entry.path, ignored_paths):
-                    continue
-                if not include_hidden and entry.name.startswith("."):
-                    continue
-                rel_path = os.path.relpath(entry.path, base_path)
-                entries.append((rel_path, entry.path))
-                if current_depth < max_depth:
-                    walk(entry.path, current_depth + 1)
+    with os.scandir(base_path) as it:
+        for entry in it:
+            if not entry.is_dir(follow_symlinks=False):
+                continue
+            if _is_ignored(entry.path, ignored_paths):
+                continue
+            if not include_hidden and entry.name.startswith("."):
+                continue
+            rel_path = os.path.relpath(entry.path, base_path)
+            entries.append((rel_path, entry.path))
 
-    walk(base_path, 1)
     entries.sort(key=lambda item: item[0].lower())
     return entries
+
+
+def _normalize_paths(paths: List[str]) -> List[str]:
+    normalized: List[str] = []
+    seen: set[str] = set()
+    for path in paths:
+        if not path:
+            continue
+        expanded = os.path.abspath(os.path.expanduser(path))
+        if expanded in seen:
+            continue
+        seen.add(expanded)
+        normalized.append(expanded)
+    return normalized
+
+
+def _has_ancestor(path: str, candidates: set[str]) -> bool:
+    for other in candidates:
+        if other == path:
+            continue
+        try:
+            common = os.path.commonpath([path, other])
+        except ValueError:
+            continue
+        if common == other:
+            return True
+    return False
+
+
+def _build_scan_list(
+    target_paths: List[str],
+    include_hidden: bool,
+    ignore_entries: List[str],
+) -> List[Tuple[str, str]]:
+    names_and_paths: List[Tuple[str, str]] = []
+    target_set = set(target_paths)
+    root_targets = [path for path in target_paths if not _has_ancestor(path, target_set)]
+
+    def add_for_base(base_path: str, prefix: str) -> None:
+        ignored_paths = _resolve_ignore_paths(base_path, ignore_entries)
+        entries = _list_subfolders(base_path, include_hidden, ignored_paths)
+        for name, path in entries:
+            display = f"{prefix}{name}"
+            names_and_paths.append((display, path))
+            if path in target_set:
+                add_for_base(path, f"{prefix}└─ ")
+
+    for base_path in root_targets:
+        add_for_base(base_path, "")
+
+    return names_and_paths
 
 
 def _render_lines(
@@ -495,8 +547,9 @@ def build_parser(defaults: dict) -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--path",
-        default=defaults["path"],
-        help="Target directory to scan (default: configured path).",
+        action="append",
+        default=None,
+        help="Target directory to scan (repeatable; defaults to configured paths).",
     )
     parser.add_argument(
         "--exclude-hidden",
@@ -509,12 +562,6 @@ def build_parser(defaults: dict) -> argparse.ArgumentParser:
         type=int,
         default=int(defaults["max_workers"]),
         help="Maximum parallel Git checks (default: configured value).",
-    )
-    parser.add_argument(
-        "--depth",
-        type=int,
-        default=int(defaults["depth"]),
-        help="Subfolder depth to scan (default: configured value).",
     )
     return parser
 
@@ -529,16 +576,17 @@ def main() -> None:
         print("Error: git is not available on PATH. Please install Git and try again.")
         sys.exit(1)
 
-    base_path = os.path.abspath(os.path.expanduser(args.path))
-    if not os.path.isdir(base_path):
-        parser.error(f"Not a directory: {base_path}")
-
-    if args.depth < 1:
-        parser.error("--depth must be 1 or greater.")
-
     include_hidden = not args.exclude_hidden
-    ignored_paths = _load_ignore_paths(base_path)
-    names_and_paths = _list_subfolders(base_path, include_hidden, args.depth, ignored_paths)
+    raw_paths = args.path if args.path else defaults["paths"]
+    target_paths = _normalize_paths(raw_paths)
+    if not target_paths:
+        parser.error("At least one --path must be provided.")
+    for path in target_paths:
+        if not os.path.isdir(path):
+            parser.error(f"Not a directory: {path}")
+
+    ignore_entries = _load_ignore_entries()
+    names_and_paths = _build_scan_list(target_paths, include_hidden, ignore_entries)
     if not names_and_paths:
         print("No subfolders found.")
         return

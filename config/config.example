@@ -1,0 +1,9 @@
+# repo-check configuration example
+# Repeat path= to scan multiple roots
+path=/Users/you/workspaces
+path=/Users/you/workspaces/personal
+path=/Users/you/projects/client-x
+
+# Flag defaults
+exclude_hidden=false
+max_workers=8

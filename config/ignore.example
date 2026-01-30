@@ -1,0 +1,12 @@
+# repo-check ignore list example
+# One folder path per line; blank lines and # comments are ignored
+
+# Absolute path
+/Users/you/workspaces/legacy-app
+
+# Relative path (resolved against each --path root)
+archive
+experiments/tmp
+
+# Hidden directory
+.devbox

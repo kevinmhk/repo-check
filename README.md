@@ -1,6 +1,6 @@
 # repo-check
 
-A small CLI that scans subfolders of a target directory (depth configurable), detects Git repositories, and reports branch, clean/dirty state, and remote sync status. Results are rendered in color using Git-style green/red when output is a TTY.
+A small CLI that scans immediate subfolders of one or more target directories, detects Git repositories, and reports branch, clean/dirty state, and remote sync status. Results are rendered in color using Git-style green/red when output is a TTY.
 
 ## Requirements
 
@@ -39,12 +39,31 @@ uv tool install git+https://github.com/kevinmhk/repo-check.git@v1.0.0
 repo-check --path ~/workspaces
 ```
 
+Scan multiple roots (repeat `--path`):
+
+```bash
+repo-check --path ~/a --path ~/a/b
+```
+
+## Execution and Installation in Development Mode
+
+Run the local source directly without installing:
+
+```bash
+python -m repo_check.cli --path ~/workspaces
+```
+
+Reinstall the tool from local source and bypass the cache:
+
+```bash
+uv tool install . --reinstall --no-cache
+```
+
 ### Common flags
 
-- `--path` (default: config value or current working directory on first run)
+- `--path` (repeatable; defaults to config values)
 - `--exclude-hidden` / `--no-exclude-hidden` (toggle hidden subfolders)
 - `--max-workers` (parallelism for Git checks, default: config value)
-- `--depth` (subfolder depth to scan, default: config value)
 
 ## Configuration
 
@@ -52,15 +71,16 @@ On startup, the CLI ensures a config file exists at `~/.config/repo-check/config
 
 ```
 path=/Users/you/workspaces
+path=/Users/you/workspaces/personal
 exclude_hidden=false
 max_workers=8
-depth=2
 ```
 
 CLI flags always override config values for that run.
+Repeat the `path=` line to configure multiple scan roots.
 
 You can also create an ignore file at `~/.config/repo-check/ignore` to skip folders. Each line is a folder
-path; absolute paths are used as-is, and relative paths are resolved against the `--path` scan root.
+path; absolute paths are used as-is, and relative paths are resolved against each `--path` scan root.
 Blank lines and lines starting with `#` are ignored.
 
 ## Output legend
@@ -74,12 +94,13 @@ Blank lines and lines starting with `#` are ignored.
 - Green `in-sync` = local matches upstream
 - Yellow `ahead N` = local has commits not pushed
 - Red `behind N` = upstream has commits not pulled
+- `└─` prefix = entry nested under another target path
 
 ## Example output
 
 ```
-apps/api          main       clean   origin    in-sync
-apps/web          main       dirty   origin    ahead 2
+apps              not-init
+└─ web            main       dirty   origin    ahead 2
 docs              not-init
 infra/terraform   detached   clean   no-remote no-upstream
 tools             pending
