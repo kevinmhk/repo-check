@@ -71,6 +71,10 @@ def _legacy_config_file_path() -> str:
     return os.path.expanduser("~/.config/my_repos_check/config")
 
 
+def _ignore_file_path() -> str:
+    return os.path.expanduser("~/.config/repo-check/ignore")
+
+
 def _default_config() -> dict:
     return {
         "path": os.getcwd(),
@@ -129,6 +133,41 @@ def _coerce_config(values: dict, defaults: dict) -> dict:
             if value.isdigit() and int(value) > 0:
                 config["depth"] = value
     return config
+
+
+def _load_ignore_paths(base_path: str) -> List[str]:
+    """Load ignore entries and return absolute paths to skip during scanning."""
+    ignore_path = _ignore_file_path()
+    ignored: List[str] = []
+    try:
+        with open(ignore_path, "r", encoding="utf-8") as handle:
+            for line in handle:
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+                expanded = os.path.expanduser(stripped)
+                if os.path.isabs(expanded):
+                    abs_path = os.path.abspath(os.path.normpath(expanded))
+                else:
+                    abs_path = os.path.abspath(os.path.normpath(os.path.join(base_path, expanded)))
+                ignored.append(abs_path)
+    except FileNotFoundError:
+        return []
+    return ignored
+
+
+def _is_ignored(path: str, ignored_paths: List[str]) -> bool:
+    """Return True when path is the same as or under any ignored path."""
+    if not ignored_paths:
+        return False
+    for ignored in ignored_paths:
+        try:
+            common = os.path.commonpath([path, ignored])
+        except ValueError:
+            continue
+        if common == ignored:
+            return True
+    return False
 
 
 def _ensure_config() -> dict:
@@ -229,7 +268,12 @@ def _check_repo(path: str, name: str) -> RepoResult:
     )
 
 
-def _list_subfolders(base_path: str, include_hidden: bool, max_depth: int) -> List[Tuple[str, str]]:
+def _list_subfolders(
+    base_path: str,
+    include_hidden: bool,
+    max_depth: int,
+    ignored_paths: List[str],
+) -> List[Tuple[str, str]]:
     entries: List[Tuple[str, str]] = []
 
     def walk(current_path: str, current_depth: int) -> None:
@@ -238,6 +282,8 @@ def _list_subfolders(base_path: str, include_hidden: bool, max_depth: int) -> Li
         with os.scandir(current_path) as it:
             for entry in it:
                 if not entry.is_dir(follow_symlinks=False):
+                    continue
+                if _is_ignored(entry.path, ignored_paths):
                     continue
                 if not include_hidden and entry.name.startswith("."):
                     continue
@@ -491,7 +537,8 @@ def main() -> None:
         parser.error("--depth must be 1 or greater.")
 
     include_hidden = not args.exclude_hidden
-    names_and_paths = _list_subfolders(base_path, include_hidden, args.depth)
+    ignored_paths = _load_ignore_paths(base_path)
+    names_and_paths = _list_subfolders(base_path, include_hidden, args.depth, ignored_paths)
     if not names_and_paths:
         print("No subfolders found.")
         return

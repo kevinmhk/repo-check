@@ -59,6 +59,10 @@ depth=2
 
 CLI flags always override config values for that run.
 
+You can also create an ignore file at `~/.config/repo-check/ignore` to skip folders. Each line is a folder
+path; absolute paths are used as-is, and relative paths are resolved against the `--path` scan root.
+Blank lines and lines starting with `#` are ignored.
+
 ## Output legend
 
 - Green `clean` = no uncommitted changes
