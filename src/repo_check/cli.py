@@ -64,6 +64,14 @@ def _run_git(path: str, args: List[str]) -> Tuple[int, str, str]:
     return completed.returncode, completed.stdout.strip(), completed.stderr.strip()
 
 
+def _upstream_remote_name(upstream_ref: str) -> Optional[str]:
+    """Return the remote name for an upstream ref like origin/main."""
+    if "/" not in upstream_ref:
+        return None
+    remote, _ = upstream_ref.split("/", 1)
+    return remote or None
+
+
 def _config_file_path() -> str:
     return os.path.expanduser("~/.config/repo-check/config")
 
@@ -259,14 +267,19 @@ def _check_repo(path: str, name: str) -> RepoResult:
             path, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]
         )
         if code == 0 and upstream:
+            remote_name = _upstream_remote_name(upstream)
+            if remote_name:
+                _run_git(
+                    path, ["fetch", "--quiet", "--prune", "--no-tags", remote_name]
+                )
             code, counts, _ = _run_git(
                 path, ["rev-list", "--left-right", "--count", "HEAD...@{u}"]
             )
             if code == 0 and counts:
                 parts = counts.split()
                 if len(parts) == 2 and all(p.isdigit() for p in parts):
-                    behind_count = int(parts[0])
-                    ahead_count = int(parts[1])
+                    ahead_count = int(parts[0])
+                    behind_count = int(parts[1])
                 else:
                     behind_count = None
                     ahead_count = None

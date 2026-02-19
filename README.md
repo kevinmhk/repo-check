@@ -39,6 +39,10 @@ uv tool install git+https://github.com/kevinmhk/repo-check.git@v1.0.0
 repo-check --path ~/workspaces
 ```
 
+For repositories with an upstream branch, sync status is computed after a lightweight
+remote refresh (`git fetch --quiet --prune --no-tags <remote>`). This avoids stale
+`in-sync` results when local tracking refs are outdated.
+
 Scan multiple roots (repeat `--path`):
 
 ```bash
